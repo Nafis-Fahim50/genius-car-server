@@ -1,6 +1,7 @@
 const express = require('express');
 const app = express()
 const cors = require('cors')
+var jwt = require('jsonwebtoken');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 require ('dotenv').config();
 
@@ -14,10 +15,33 @@ app.use(express.json())
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@cluster0.6llxg7j.mongodb.net/?retryWrites=true&w=majority`;
 const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true, serverApi: ServerApiVersion.v1 });
 
+function verifyJWT (req, res, next){
+    const authHeader = req.headers.authorization;
+    if(!authHeader){
+        return res.status(401).send({message: 'unauthorized access'})
+    }
+    const token = authHeader.split(' ')[1];
+    jwt.verify(token, process.env.SECRET_ACCESS_TOKEN, function(err, decoded){
+        if(err){
+            return res.status(403).send({message: 'forbidden access'})
+        }
+        req.decoded = decoded;
+        next();
+    })
+}
+
 async function run(){
     try{
         const serviceCollection = client.db('geniusCar').collection('services');
         const orderCollection = client.db('geniusCar').collection('orders');
+
+        app.post('/jwt', (req, res) =>{
+            const user = req.body;
+            // console.log(user);
+            const token = jwt.sign(user, process.env.SECRET_ACCESS_TOKEN, {expiresIn:'1d'});
+            res.send({token});
+
+        })
 
         app.get('/services', async(req,res) =>{
             const query = {}
@@ -39,7 +63,15 @@ async function run(){
             res.send(result);
         })
 
-        app.get('/orders', async(req, res) =>{
+        app.get('/orders', verifyJWT, async(req, res) =>{
+            
+            const decoded = req.decoded
+            // console.log(decoded);
+
+            if(decoded.email !== req.query.email){
+                res.status('403').send({message: 'unthorized access'})
+            }
+
             let query = {};
             if(req.query.email){
                 query = {
